@@ -11,7 +11,7 @@ dbUser = 'moviesdev'
 dbPass = '123456a@'
 dbName = 'moviescreed'
 
-basePath = '/home/tuyenlv/data/learning/computer-science/data-mining/recommendation-system/datasets/movielens/ml-latest-small';
+basePath = '/home/tuyenlv/common-data/learning/computer-science/data-mining/recommendation-system/datasets/movielens/ml-latest-small';
 modalPath = 'modal/modal-small.json'
 ratingPath = 'ratings.csv'
 
@@ -95,6 +95,7 @@ def getRecommendations(prefs,person,similarity=sim_pearson):
 	rankings.sort( )
 	rankings.reverse( )
 	return rankings
+	
 
 def transformPrefs(prefs):
 	result={}
@@ -160,8 +161,8 @@ def loadRatingsFromFile(path=basePath+"/"+ratingPath):
 	with open(path) as f:
 	    reader = csv.DictReader(f, delimiter=',')
 	    for row in reader:
-	    	userId = int(row['userId'])
-	    	movieId = int(row['movieId'])
+	    	userId = str(row['userId'])
+	    	movieId = str(row['movieId'])
 	    	rating = float(row['rating'])
 	    	ratings.setdefault(userId,{})
 	    	ratings[userId][movieId]=rating
@@ -227,17 +228,17 @@ def prepareUserRecommendations(userId=-1):
 
 def calRecommendations():
 	print "Loading rating from db..."
-	ratings = loadRatings(-1)
+	ratings = loadRatingsFromFile()
 	print "Total %d ratings\n\n" % len(ratings)
 	print "Calculating modal..."
-	topSimItems = loadJson(modalPath)
+	# topSimItems = loadJson(modalPath)	
+	topSimItems = calculateSimilarItems(ratings, 50)
 	print "Total %d movies\n\n" % len(topSimItems)
-	# topSimItems = calculateSimilarItems(ratings, 50)
-
+	
 	# os.rename(modalPath, modalPath + "-" + str(time.time()))
 	# exportJson(topSimItems,modalPath)
 	print "Save recommendations items to db..."
 	saveUserRecommendation(ratings, topSimItems)
 	print "Save similar items to db..."
-	# saveTopSimItem	s(topSimItems)
+	saveTopSimItems(topSimItems)
 
