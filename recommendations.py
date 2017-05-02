@@ -1,8 +1,12 @@
+# -*- coding: utf-8 -*-
 import csv
 import time
 import os
 import json
 import MySQLdb
+import random
+import math
+import sys
 from math import sqrt
 
 
@@ -14,6 +18,17 @@ dbName = 'moviescreed'
 basePath = '/home/tuyenlv/common-data/learning/computer-science/data-mining/recommendation-system/datasets/movielens/ml-latest-small';
 modalPath = 'modal/modal-small.json'
 ratingPath = 'ratings.csv'
+maxMovies = 10000
+
+
+def printProgressBar (iteration, total, prefix = '', suffix = '', decimals = 1, length = 50, fill = '█'):
+    percent = ("{0:." + str(decimals) + "f}").format(100 * (iteration / float(total)))
+    filledLength = int(length * iteration // total)
+    bar = fill * filledLength + ' ' * (length - filledLength)
+    sys.stdout.write('\r%s |%s| %s%% %s' % (prefix, bar, percent, suffix))
+    sys.stdout.flush()
+    if iteration == total: 
+        print()
 
 def loadJson(path=modalPath):
 	return json.loads(open(path).read())
@@ -33,7 +48,7 @@ def sim_distance(prefs,person1,person2):
 			# if they have no ratings in common, return 0
 	if len(si)==0: return 0
 			# Add up the squares of all the differences
-	sum_of_squares=sum([pow(prefs[person1][item]-prefs[person2][item],2) for item in prefs[person1] if item in prefs[person2]])
+	sum_of_squares=sum([pow(prefs[person1][item]-prefs[person2][item],2) for item in si])
 	return 1/(1+sum_of_squares)
 
 def sim_pearson(prefs,p1,p2):
@@ -62,7 +77,7 @@ def sim_pearson(prefs,p1,p2):
 
 # Returns the best matches for person from the prefs dictionary.
 # Number of results and similarity function are optional params.
-def topMatches(prefs,person,n=5,similarity=sim_pearson):
+def topMatches(prefs,person,n=10,similarity=sim_pearson):
 	scores=[(similarity(prefs,person,other),other) for other in prefs if other!=person]
 	# Sort the list so the highest scores appear at the top
 	scores.sort( )
@@ -95,7 +110,7 @@ def getRecommendations(prefs,person,similarity=sim_pearson):
 	rankings.sort( )
 	rankings.reverse( )
 	return rankings
-	
+
 
 def transformPrefs(prefs):
 	result={}
@@ -106,7 +121,7 @@ def transformPrefs(prefs):
 			result[item][person]=prefs[person][item]
 	return result
 
-def calculateSimilarItems(ratings,n=10):
+def calculateSimilarItems(ratings,n=10,similarity=sim_distance):
 	# Create a dictionary of items showing which other items they
 	# are most similar to.
 	topSimItems = {};
@@ -117,9 +132,10 @@ def calculateSimilarItems(ratings,n=10):
 	for itemId, itemRatings in ratings.items():
 	# Status updates for large datasets
 		c+=1
-		if c%100==0: print "%d / %d" % (c,len(ratings))
+		printProgressBar(c, len(ratings), prefix = 'Trainning:', suffix = 'Complete', length = 50)
+
 		# Find the most similar items to this one
-		curTopSim=topMatches(ratings,itemId,n=n,similarity=sim_pearson)
+		curTopSim=topMatches(ratings,itemId,n=n,similarity=sim_distance)
 		topSimItems[itemId] = {}
 		for item in curTopSim:
 			topSimItems[itemId][item[1]] = item[0];
@@ -147,7 +163,7 @@ def getRecommendedItems(userRatings, topSimItems):
 	for item,score in scores.items():
 		ct+=1
 		if totalSim[item] == 0:
-			print " " + item + " \n"
+			print (" " + item + " \n")
 		else: 
 			rankings.append((score/totalSim[item],item))
 	#rankings=[(score/totalSim[item],item) for item,score in scores.items( )]
@@ -158,6 +174,8 @@ def getRecommendedItems(userRatings, topSimItems):
 
 def loadRatingsFromFile(path=basePath+"/"+ratingPath):
 	ratings={}
+	trainRatings={}
+	testRatings={}
 	with open(path) as f:
 	    reader = csv.DictReader(f, delimiter=',')
 	    for row in reader:
@@ -166,7 +184,11 @@ def loadRatingsFromFile(path=basePath+"/"+ratingPath):
 	    	rating = float(row['rating'])
 	    	ratings.setdefault(userId,{})
 	    	ratings[userId][movieId]=rating
-	return ratings
+	for user in ratings:
+		totalTest = len(ratings[user]) / 10;
+		testRatings[user] = dict([(movie,rating) for movie, rating in random.sample(ratings[user].items(),totalTest)])
+		trainRatings[user] = dict([(movie,rating) for movie, rating in ratings[user].items() if movie not in testRatings[user].keys()])
+	return ratings, testRatings, trainRatings
 
 def loadRatings(userId=-1):	
 	db = MySQLdb.connect(dbHost,dbUser,dbPass, dbName)
@@ -185,7 +207,7 @@ def loadRatings(userId=-1):
 			ratings.setdefault(userId,{})
 			ratings[userId][movieId]=rating
 	except Exception as e:
-		print e
+		print (e)
 		db.rollback()
 	return ratings
 
@@ -201,7 +223,7 @@ def saveTopSimItems(topSimItems):
 				cursor.execute(sql)
 		db.commit()
 	except Exception as e:
-		print e
+		print (e)
 		db.rollback()
 
 def saveUserRecommendation(ratings, topSimItems):
@@ -218,7 +240,7 @@ def saveUserRecommendation(ratings, topSimItems):
 				cursor.execute(sql)
 		db.commit()
 	except Exception as e:
-		print e
+		print (e)
 		db.rollback()
 
 def prepareUserRecommendations(userId=-1):
@@ -226,19 +248,59 @@ def prepareUserRecommendations(userId=-1):
 	ratings = loadRatings(userId)
 	saveUserRecommendation(ratings, topSimItems)
 
+def predict(userRatings, predictMovie, topSimItems):
+	simSum = 0
+	total = 0
+	for ratedMovie in userRatings.keys():
+		# print "%s %s %f" % (ratedMovie, predictMovie, userRatings[ratedMovie])
+		topSimItems[ratedMovie].setdefault(predictMovie, 0);
+		total += topSimItems[ratedMovie][predictMovie] * userRatings[ratedMovie]
+		simSum += topSimItems[ratedMovie][predictMovie] 
+	if simSum == 0: return -1
+	return total / simSum
+
+#90% for train, 10% for test
+def validate():
+	print ("prepare 90% dataset for trainning...")
+	ratings, testRatings, trainRatings = loadRatingsFromFile()
+	# maxMovies = 500
+	topSimItems = calculateSimilarItems(trainRatings, maxMovies, sim_distance)
+	totalTest = 0
+	s = 0	
+	sSquare = 0
+	totalZero = 0
+	print ("\nevaluating...")
+	for user in testRatings.keys():
+		for movie in testRatings[user].keys():
+			# print "userid %s, movie %s" % (user, movie)
+			predictedRating = predict(trainRatings[user], movie, topSimItems)
+			if predictedRating < 0:
+				totalZero += 1
+				predictedRating = 2.5
+			realRating = testRatings[user][movie]
+			totalTest += 1
+			s += (realRating - predictedRating)
+			sSquare += (realRating - predictedRating) * (realRating - predictedRating)
+			if predictedRating > 5:
+				print ("%s %s %f %f" % (user, movie, realRating, predictedRating))			
+	print ("Total test %d, Total sim sum zero %d" % (totalTest, totalZero))
+	print ("MAE  %f" % (s / totalTest))
+	print ("RMSE %f" % (math.sqrt(sSquare / totalTest)))
+
 def calRecommendations():
-	print "Loading rating from db..."
-	ratings = loadRatingsFromFile()
-	print "Total %d ratings\n\n" % len(ratings)
-	print "Calculating modal..."
-	# topSimItems = loadJson(modalPath)	
-	topSimItems = calculateSimilarItems(ratings, 50)
-	print "Total %d movies\n\n" % len(topSimItems)
+	# print "Loading rating from file..."	
 	
+	ratings, testRatings, trainRatings = loadRatingsFromFile()
+	# print "Calculating modal..."
+	# # topSimItems = loadJson(modalPath)		
+	topSimItems = calculateSimilarItems(ratings, 50)
 	# os.rename(modalPath, modalPath + "-" + str(time.time()))
 	# exportJson(topSimItems,modalPath)
-	print "Save recommendations items to db..."
-	saveUserRecommendation(ratings, topSimItems)
-	print "Save similar items to db..."
-	saveTopSimItems(topSimItems)
+	# print "Save recommendations items to db..."
+	# saveUserRecommendation(ratings, topSimItems)
+	# print "Save similar items to db..."
+	# saveTopSimItems(topSimItems)
 
+
+
+validate()

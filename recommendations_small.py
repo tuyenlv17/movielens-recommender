@@ -93,7 +93,7 @@ def calculateSimilarItems(prefs,n=10):
  	c+=1
  	if c%100==0: print "%d / %d" % (c,len(itemPrefs))
  	# Find the most similar items to this one
- 	scores=topMatches(itemPrefs,item,n=n,similarity=sim_distance)
+ 	scores=topMatches(itemPrefs,item,n=n,similarity=sim_pearson)
  	result[item]=scores
  return result
 
@@ -129,13 +129,8 @@ def getRecommendedItems(prefs,itemMatch,user):
 	rankings.reverse( )
 	return rankings
 
-def loadMovieLens(path='/home/tuyenlv/data/learning/computer-science/data-mining/recommendation-system/datasets/movielens/ml-latest-small'):
+def loadMovieLens(path='/home/tuyenlv/common-data/learning/computer-science/data-mining/recommendation-system/datasets/movielens/ml-latest-small'):
 	# Get movie titles
-	movies={}
-	for line in open(path+'/home/tuyenlv/data/learning/computer-science/data-mining/recommendation-system/datasets/movielens/ml-latest-small/movies.csv'):
-		(id,title)=line.split(',')[0:2]
-		if id=="movieId": continue
-		movies[title]=id
 
 	# Load data
 	prefs={}
